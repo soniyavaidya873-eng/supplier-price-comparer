@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Supplier Price Comparer</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f3f6f9;--card:#fff;--ink:#14212e;--mute:#5d6b79;--line:#d9e1e8;--accent:#1d4e89;--best:#0f7a4a;--bestbg:#e3f4ea;--bad:#b3261e;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1720;--card:#18232f;--ink:#e6edf3;--mute:#93a1af;--line:#2a3a49;--accent:#6aa8ee;--best:#4cc58a;--bestbg:#12342500;--bad:#f2867f}}
+:root[data-theme="dark"]{--bg:#0f1720;--card:#18232f;--ink:#e6edf3;--mute:#93a1af;--line:#2a3a49;--accent:#6aa8ee;--best:#4cc58a;--bestbg:#12342500;--bad:#f2867f}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:640px;margin:0 auto;padding:18px 16px 40px}
+h1{font-size:22px;margin:4px 0 2px;font-weight:600}
+.sub{color:var(--mute);margin:0 0 16px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+label{display:block;font-size:13px;color:var(--mute);margin-bottom:3px}
+input{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.full{grid-column:1/-1}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:9px 14px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) button.primary{color:#0f1720}}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.err{color:var(--bad);font-size:13px;min-height:18px;margin:6px 0 0}
+.summary{border-left:4px solid var(--best);background:var(--bestbg);padding:12px 14px;border-radius:8px;margin-bottom:12px}
+.summary b{font-size:17px}
+.summary small{display:block;color:var(--mute)}
+.q{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.q.best{border:2px solid var(--best)}
+.q .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.q .name{font-weight:600}
+.badge{font-size:12px;color:var(--best);font-weight:600}
+.total{font-size:20px;font-weight:600}
+.meta{color:var(--mute);font-size:13px;margin-top:4px}
+.bd{font-size:13px;color:var(--mute);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.x{border:none;background:none;color:var(--bad);padding:4px 0;font-size:13px}
+.empty{color:var(--mute);text-align:center;padding:22px 8px}
+.sort{margin-bottom:10px;font-size:13px;color:var(--mute)}
+.sort button{padding:4px 10px;font-size:13px}
+.sort button.on{border-color:var(--accent);color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Supplier price comparer</h1>
+  <p class="sub">Add quotes from different suppliers. The best deal is the lowest total after GST and shipping.</p>
+
+  <div class="panel">
+    <label for="product">Product</label>
+    <input id="product" placeholder="e.g. 5 mm MS steel sheet">
+  </div>
+
+  <div class="panel">
+    <div class="grid">
+      <div class="full"><label for="sname">Supplier name</label><input id="sname" placeholder="e.g. Sharma Traders"></div>
+      <div><label for="price">Price per unit (₹)</label><input id="price" type="number" inputmode="decimal" min="0" step="any"></div>
+      <div><label for="qty">Quantity needed</label><input id="qty" type="number" inputmode="numeric" min="1" step="any"></div>
+      <div><label for="gst">GST (%)</label><input id="gst" type="number" inputmode="decimal" min="0" step="any" value="18"></div>
+      <div><label for="ship">Shipping (₹, total)</label><input id="ship" type="number" inputmode="decimal" min="0" step="any" value="0"></div>
+      <div class="full"><label for="days">Delivery time (days, optional)</label><input id="days" type="number" inputmode="numeric" min="0"></div>
+    </div>
+    <div class="err" id="err" role="alert"></div>
+    <div class="row" style="margin-top:6px">
+      <button class="primary" id="add">Add quote</button>
+      <button id="sample">Load sample</button>
+      <button id="clear">Clear all</button>
+    </div>
+  </div>
+
+  <div id="results"></div>
+</main>
+
+<script>
+var KEY = "price-comparer-v1";
+var quotes = [];
+var sortBy = "total";
+var $ = function (id) { return document.getElementById(id); };
+
+function load() {
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw) {
+      var d = JSON.parse(raw);
+      quotes = Array.isArray(d.quotes) ? d.quotes : [];
+      $("product").value = d.product || "";
+    }
+  } catch (e) { quotes = []; }
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify({ product: $("product").value, quotes: quotes })); } catch (e) {}
+}
+
+// Core logic: landed cost = (price x qty) + GST on that amount + shipping
+function calc(q) {
+  var base = q.price * q.qty;
+  var gstAmt = base * q.gst / 100;
+  var total = base + gstAmt + q.ship;
+  return { base: base, gstAmt: gstAmt, total: total, perUnit: total / q.qty };
+}
+function inr(n) {
+  return "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function render() {
+  var out = $("results");
+  if (!quotes.length) {
+    out.innerHTML = '<div class="empty">No quotes yet. Add your first supplier above.</div>';
+    return;
+  }
+  var rows = quotes.map(function (q) { return { q: q, c: calc(q) }; });
+  var cheapest = rows.reduce(function (a, b) { return b.c.total < a.c.total ? b : a; });
+  var dearest = rows.reduce(function (a, b) { return b.c.total > a.c.total ? b : a; });
+  var fastest = null;
+  rows.forEach(function (r) {
+    if (r.q.days !== null && (fastest === null || r.q.days < fastest.q.days)) fastest = r;
+  });
+
+  var html = "";
+  if (rows.length > 1) {
+    var save_ = dearest.c.total - cheapest.c.total;
+    html += '<div class="summary"><b>' + esc(cheapest.q.name) + ' is cheapest at ' + inr(cheapest.c.total) + '</b>' +
+      '<small>Saves ' + inr(save_) + ' vs the costliest quote (' + esc(dearest.q.name) + ').' +
+      (fastest && fastest !== cheapest ? ' Fastest delivery: ' + esc(fastest.q.name) + ' (' + fastest.q.days + ' days).' : '') +
+      '</small></div>';
+  } else {
+    html += '<div class="summary"><b>Add one more quote to compare.</b></div>';
+  }
+
+  html += '<div class="sort">Sort by: ' +
+    ['total', 'perUnit', 'days'].map(function (k) {
+      var label = { total: "Total", perUnit: "Per unit", days: "Delivery" }[k];
+      return '<button data-sort="' + k + '" class="' + (sortBy === k ? "on" : "") + '">' + label + '</button>';
+    }).join(" ") + '</div>';
+
+  rows.sort(function (a, b) {
+    if (sortBy === "days") return (a.q.days === null ? 1e9 : a.q.days) - (b.q.days === null ? 1e9 : b.q.days);
+    return a.c[sortBy] - b.c[sortBy];
+  });
+
+  rows.forEach(function (r) {
+    var isBest = rows.length > 1 && r === cheapest;
+    var extra = r.c.total - cheapest.c.total;
+    html += '<div class="q' + (isBest ? " best" : "") + '">' +
+      '<div class="top"><span class="name">' + esc(r.q.name) + '</span>' +
+      (isBest ? '<span class="badge">Best price</span>' : '') + '</div>' +
+      '<div class="top"><span class="total">' + inr(r.c.total) + '</span>' +
+      '<span class="meta">' + inr(r.c.perUnit) + ' per unit</span></div>' +
+      '<div class="bd"><span>Goods ' + inr(r.c.base) + '</span><span>GST ' + inr(r.c.gstAmt) + ' (' + r.q.gst + '%)</span>' +
+      '<span>Shipping ' + inr(r.q.ship) + '</span>' +
+      (r.q.days !== null ? '<span>' + r.q.days + ' days</span>' : '') + '</div>' +
+      '<div class="meta">' + (isBest || rows.length < 2 ? "&nbsp;" : '+' + inr(extra) + ' more than the best') + '</div>' +
+      '<button class="x" data-del="' + r.q.id + '">Remove</button></div>';
+  });
+  out.innerHTML = html;
+}
+
+function num(id) { return $(id).value === "" ? NaN : parseFloat($(id).value); }
+
+function addQuote() {
+  var name = $("sname").value.trim();
+  var price = num("price"), qty = num("qty"), gst = num("gst"), ship = num("ship");
+  var days = $("days").value === "" ? null : parseInt($("days").value, 10);
+  var err = "";
+  if (!name) err = "Enter the supplier name.";
+  else if (!(price >= 0) || isNaN(price)) err = "Enter a valid price per unit.";
+  else if (!(qty > 0) || isNaN(qty)) err = "Quantity must be more than 0.";
+  else if (isNaN(gst) || gst < 0) err = "Enter GST as a number, 0 or more.";
+  else if (isNaN(ship) || ship < 0) err = "Shipping must be 0 or more.";
+  $("err").textContent = err;
+  if (err) return;
+  quotes.push({ id: Date.now() + Math.random(), name: name, price: price, qty: qty, gst: gst, ship: ship, days: days });
+  ["sname", "price", "days"].forEach(function (i) { $(i).value = ""; });
+  $("sname").focus();
+  save(); render();
+}
+
+$("add").onclick = addQuote;
+$("clear").onclick = function () { quotes = []; save(); render(); };
+$("product").oninput = save;
+$("sample").onclick = function () {
+  $("product").value = "5 mm MS steel sheet";
+  $("qty").value = 100;
+  var s = [["Sharma Traders", 410, 18, 1500, 6], ["Metro Steels", 395, 18, 3200, 4], ["Bharat Metals", 402, 12, 2000, 9]];
+  quotes = s.map(function (x, i) {
+    return { id: i + 1, name: x[0], price: x[1], qty: 100, gst: x[2], ship: x[3], days: x[4] };
+  });
+  save(); render();
+};
+$("results").onclick = function (e) {
+  var d = e.target.getAttribute("data-del"), s = e.target.getAttribute("data-sort");
+  if (d) { quotes = quotes.filter(function (q) { return String(q.id) !== d; }); save(); render(); }
+  if (s) { sortBy = s; render(); }
+};
+
+load(); render();
+</script>
+</body>
+</html>
